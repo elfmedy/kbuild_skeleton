@@ -100,7 +100,6 @@ quiet_cmd_myapp = LD      $@
       -Wl,--start-group $(myapp-libs) $(myapp-objs) -Wl,--end-group
 
 myapp: $(myapp-all)
-	$(Q)$(MAKE) -f $(srctree)/Makefile silentoldconfig
 	$(call if_changed,myapp)
 
 # The actual objects are generated when descending, 
