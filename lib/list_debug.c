@@ -6,8 +6,10 @@
  * DEBUG_LIST.
  */
 
-#include <logging.h>
+//#include <logging.h>
 #include <list.h>
+#include <log.h>
+
 
 /*
  * Insert a new entry between two known consecutive entries.

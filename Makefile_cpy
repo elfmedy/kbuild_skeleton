@@ -1,0 +1,195 @@
+
+srctree		:= $(if $(KBUILD_SRC),$(KBUILD_SRC),$(CURDIR))
+
+export srctree
+
+HOSTCC       = gcc
+HOSTCXX      = g++
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
+HOSTCXXFLAGS = -O2
+
+#export HOSTCC HOSTCXX  HOSTCFLAGS HOSTCXXFLAGS
+
+# We need some generic definitions (do not try to remake the file).
+include $(srctree)/scripts/Kbuild.include
+
+
+
+# ===========================================================================
+# Rules shared between *config targets and build targets
+
+# Basic helpers built in scripts/
+PHONY += scripts_basic
+scripts_basic:
+	$(Q)$(MAKE) $(build)=scripts/basic
+
+
+
+config: scripts_basic
+	$(Q)mkdir -p include/linux include/config
+	$(Q)$(MAKE) $(build)=scripts/kconfig $@
+
+%config: scripts_basic
+	$(Q)mkdir -p include/linux include/config
+	$(Q)$(MAKE) $(build)=scripts/kconfig $@
+
+
+
+
+AS		= $(CROSS_COMPILE)as
+LD		= $(CROSS_COMPILE)ld
+CC		= $(CROSS_COMPILE)gcc
+CPP		= $(CC) -E
+AR		= $(CROSS_COMPILE)ar
+NM		= $(CROSS_COMPILE)nm
+STRIP		= $(CROSS_COMPILE)strip
+OBJCOPY		= $(CROSS_COMPILE)objcopy
+OBJDUMP		= $(CROSS_COMPILE)objdump
+AWK		= awk
+
+
+# Use LINUXINCLUDE when you must reference the include/ directory.
+# Needed to be compatible with the O= option
+LINUXINCLUDE    := -Iinclude \
+                   $(if $(KBUILD_SRC), -I$(srctree)/include) \
+                   -include include/generated/autoconf.h
+
+export LINUXINCLUDE
+
+# Read in config
+-include include/config/auto.conf
+
+
+# Read in dependencies to all Kconfig* files, make sure to run
+# oldconfig if changes are detected.
+-include include/config/auto.conf.cmd
+
+KCONFIG_CONFIG	?= .config
+export KCONFIG_CONFIG
+
+# To avoid any implicit rule to kick in, define an empty command
+$(KCONFIG_CONFIG) include/config/auto.conf.cmd: ;
+
+# If .config is newer than include/config/auto.conf, someone tinkered
+# with it and forgot to run make oldconfig.
+# if auto.conf.cmd is missing then we are probably in a cleaned tree so
+# we execute the config step to be sure to catch updated Kconfig files
+include/config/%.conf: $(KCONFIG_CONFIG) include/config/auto.conf.cmd
+	$(Q)$(MAKE) -f $(srctree)/Makefile silentoldconfig
+
+
+# The all: target is the default when no target is given on the
+# command line.
+# This allow a user to issue only 'make' to build a kernel including modules
+# Defaults to vmlinux, but the arch makefile usually adds further targets
+all: myapp
+
+
+objs-y		:= main
+libs-y		:= lib
+
+myapp-dirs	:= $(objs-y) $(libs-y)
+myapp-objs	:= $(patsubst %,%/built-in.o, $(objs-y))
+myapp-libs	:= $(patsubst %,%/lib.a, $(libs-y))
+myapp-all	:= $(myapp-objs) $(myapp-libs)
+
+# Do modpost on a prelinked vmlinux. The finally linked vmlinux has
+# relevant sections renamed as per the linker script.
+quiet_cmd_myapp = LD      $@
+      cmd_myapp = $(CC) $(LDFLAGS) -o $@                          \
+      -Wl,--start-group $(myapp-libs) $(myapp-objs) -Wl,--end-group
+
+myapp: $(myapp-all)
+	$(Q)$(MAKE) -f $(srctree)/Makefile silentoldconfig
+	$(call if_changed,myapp)
+
+# The actual objects are generated when descending, 
+# make sure no implicit rule kicks in
+$(sort $(myapp-all)): $(myapp-dirs) ;
+
+
+$(myapp-dirs): scripts_basic
+	$(Q)$(MAKE) $(build)=$@
+
+
+
+
+
+
+
+
+###
+# Cleaning is done on three levels.
+# make clean     Delete most generated files
+#                Leave enough to build external modules
+# make mrproper  Delete the current configuration, and all generated files
+# make distclean Remove editor backup files, patch leftover files and the like
+
+# Directories & files removed with 'make clean'
+CLEAN_DIRS  +=
+CLEAN_FILES +=	myapp
+
+# Directories & files removed with 'make mrproper'
+MRPROPER_DIRS  += include/config include/generated
+MRPROPER_FILES += .config .config.old tags TAGS cscope* GPATH GTAGS GRTAGS GSYMS
+
+# clean - Delete most, but leave enough to build external modules
+#
+clean: rm-dirs  := $(CLEAN_DIRS)
+clean: rm-files := $(CLEAN_FILES)
+clean-dirs      := $(addprefix _clean_, $(myapp-dirs))
+
+PHONY += $(clean-dirs) clean archclean
+$(clean-dirs):
+	$(Q)$(MAKE) $(clean)=$(patsubst _clean_%,%,$@)
+
+clean: $(clean-dirs)
+	$(call cmd,rmdirs)
+	$(call cmd,rmfiles)
+	@find . $(RCS_FIND_IGNORE) \
+		\( -name '*.[oas]' -o -name '.*.cmd' \
+		-o -name '.*.d' -o -name '.*.tmp' -o -name '*.mod.c' \
+		-o -name modules.builtin -o -name '.tmp_*.o.*' \
+		-o -name '*.gcno' \) -type f -print | xargs rm -f
+
+# mrproper - Delete all generated files, including .config
+#
+mrproper: rm-dirs  := $(wildcard $(MRPROPER_DIRS))
+mrproper: rm-files := $(wildcard $(MRPROPER_FILES))
+mrproper-dirs      := $(addprefix _mrproper_, scripts)
+
+PHONY += $(mrproper-dirs) mrproper
+$(mrproper-dirs):
+	$(Q)$(MAKE) $(clean)=$(patsubst _mrproper_%,%,$@)
+
+mrproper: clean $(mrproper-dirs)
+	$(call cmd,rmdirs)
+	$(call cmd,rmfiles)
+
+# distclean
+#
+PHONY += distclean
+distclean: mrproper
+	@find $(srctree) $(RCS_FIND_IGNORE) \
+		\( -name '*.orig' -o -name '*.rej' -o -name '*~' \
+		-o -name '*.bak' -o -name '#*#' -o -name '.*.orig' \
+		-o -name '.*.rej' -o -size 0 \
+		-o -name '*%' -o -name '.*.cmd' -o -name 'core' \) \
+		-type f -print | xargs rm -f
+
+
+# FIXME Should go into a make.lib or something
+# ===========================================================================
+
+quiet_cmd_rmdirs = $(if $(wildcard $(rm-dirs)),CLEAN   $(wildcard $(rm-dirs)))
+      cmd_rmdirs = rm -rf $(rm-dirs)
+
+quiet_cmd_rmfiles = $(if $(wildcard $(rm-files)),CLEAN   $(wildcard $(rm-files)))
+      cmd_rmfiles = rm -f $(rm-files)
+
+# Shorthand for $(Q)$(MAKE) -f scripts/Makefile.clean obj=dir
+# Usage:
+# $(Q)$(MAKE) $(clean)=dir
+clean := -f $(if $(KBUILD_SRC),$(srctree)/)scripts/Makefile.clean obj
+
+
