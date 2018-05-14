@@ -1,5 +1,5 @@
 kbuild_skeleton
-===============
+==============
 
 A template with Linux Kernel like build system (Kbuild).
 
